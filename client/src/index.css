@@ -1,0 +1,139 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --felt: #1a472a;
+  --felt-light: #2d6a4f;
+  --felt-dark: #0f2d1c;
+  --card-white: #f8f4e8;
+  --card-shadow: #c8b89a;
+  --gold: #f59e0b;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  background-color: var(--felt-dark);
+  font-family: 'Inter', sans-serif;
+  color: #ffffff;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* Card base */
+.card-base {
+  border-radius: 10px;
+  box-shadow: 2px 4px 8px rgba(0,0,0,0.5);
+  border: 2px solid var(--card-shadow);
+  background: var(--card-white);
+  color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Bebas Neue', sans-serif;
+  user-select: none;
+}
+
+/* Oval felt table */
+.felt-table {
+  background: radial-gradient(ellipse at center, #2d6a4f 0%, #1a472a 60%, #0f2d1c 100%);
+}
+
+.table-oval {
+  background: radial-gradient(ellipse at center, #2d6a4f 0%, #1a472a 70%, #0f2d1c 100%);
+  border: 6px solid #8B6914;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 4px #5a4209,
+    inset 0 0 60px rgba(0,0,0,0.4),
+    0 20px 60px rgba(0,0,0,0.6);
+}
+
+/* Deck stack visual */
+.deck-stack {
+  position: relative;
+  width: 56px;
+  height: 80px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.deck-stack:active {
+  transform: scale(0.93);
+}
+
+.deck-card {
+  position: absolute;
+  width: 56px;
+  height: 80px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 50%, #1e3a5f 100%);
+  border: 2px solid #4a90d9;
+  box-shadow: 1px 2px 4px rgba(0,0,0,0.5);
+}
+
+.deck-card:nth-child(1) { transform: translate(-3px, -3px) rotate(-3deg); }
+.deck-card:nth-child(2) { transform: translate(-1px, -1px) rotate(-1deg); }
+.deck-card:nth-child(3) { transform: translate(0px, 0px) rotate(0deg); }
+
+.deck-stack-label {
+  position: absolute;
+  bottom: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+  font-family: 'Inter', sans-serif;
+}
+
+/* Card fan for my hand */
+.card-fan {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  padding: 4px 2px;
+}
+
+/* Turn indicator banner */
+.turn-banner {
+  background: linear-gradient(90deg, transparent, rgba(245,158,11,0.2), transparent);
+  border-top: 1px solid rgba(245,158,11,0.3);
+  border-bottom: 1px solid rgba(245,158,11,0.3);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2d6a4f; border-radius: 3px; }
+
+/* Room code display */
+.room-code {
+  letter-spacing: 0.3em;
+  font-family: 'Bebas Neue', sans-serif;
+}
+
+/* Pulse animation for whose turn it is */
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(245,158,11,0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(245,158,11,0); }
+  100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+}
+.pulse-gold {
+  animation: pulse-ring 1.5s infinite;
+}
+
+@keyframes float-up {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-40px); }
+}
+.float-up {
+  animation: float-up 1.5s ease forwards;
+}
