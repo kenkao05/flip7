@@ -29,7 +29,18 @@ export default function PlayerRow({ player, isMe, isCurrent }) {
             {player.name}
           </span>
           {isMe && (
-            <span className="text-yellow-400 text-xs">(you)</span>
+            <span style={{
+              background: '#f59e0b',
+              color: '#0f2d1c',
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 6px',
+              borderRadius: 4,
+              letterSpacing: '0.05em',
+              fontFamily: 'Bebas Neue',
+            }}>
+              YOU
+            </span>
           )}
           {player.isHost && (
             <span className="text-yellow-400 text-xs">👑</span>
