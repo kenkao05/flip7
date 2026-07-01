@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
 
-const { createRoom, getRoom, joinRoom, removePlayer } = require('./roomManager');
+const { createRoom, getRoom, joinRoom, markDisconnected, reconnectPlayer, removePlayer } = require('./roomManager');
 const {
   startRound,
   drawCard,
@@ -19,6 +19,7 @@ const {
 
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
   pingInterval: 10000,
@@ -36,14 +37,10 @@ if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 
-// ─── BUILD STATE TO SEND TO CLIENTS ──────────────────────────────────────────
-// This is the ONLY place we construct what clients see.
-// currentTurnPlayerId and currentTurnPlayerName come directly from
-// state.players[state.turnIndex] — no helper function, no indirection.
+// ─── STATE → CLIENT ───────────────────────────────────────────────────────────
 
 function clientState(state) {
   const turnPlayer = state.players[state.turnIndex] || state.players[0];
-
   return {
     roomCode:              state.roomCode,
     hostId:                state.hostId,
@@ -51,8 +48,8 @@ function clientState(state) {
     roundNumber:           state.roundNumber,
     deckRemaining:         state.deck.length,
     turnIndex:             state.turnIndex,
-    currentTurnPlayerId:   turnPlayer.id,
-    currentTurnPlayerName: turnPlayer.name,
+    currentTurnPlayerId:   turnPlayer?.id || null,
+    currentTurnPlayerName: turnPlayer?.name || null,
     pendingAction:         state.pendingAction,
     lastRoundScores:       state.lastRoundScores,
     players: state.players.map(p => ({
@@ -68,6 +65,7 @@ function clientState(state) {
       secondChance:  p.secondChance,
       roundScore:    p.roundScore,
       totalScore:    p.totalScore,
+      connected:     p.connected,
     })),
   };
 }
@@ -103,27 +101,26 @@ function checkRoundOver(state, roomCode) {
   return false;
 }
 
-// After a player acts (hit/stay/bust), move to next turn and broadcast
 function advanceAndBroadcast(state, roomCode) {
   if (checkRoundOver(state, roomCode)) return;
   nextTurn(state);
   broadcast(roomCode, state);
 }
 
-// Process flip three: draw `count` cards one at a time for target
 function doFlipThree(state, target, count, roomCode) {
   if (count <= 0 || !target.isActive) {
     advanceAndBroadcast(state, roomCode);
     return;
   }
-
   const card = drawCard(state);
   if (!card) { finishRound(state, roomCode); return; }
 
   const outcome = applyCard(state, target, card);
+  const deckEmpty = state.deck.length === 0;
 
   if (outcome === 'bust') {
     io.to(roomCode).emit('bust', { playerId: target.id, playerName: target.name });
+    if (deckEmpty) { broadcast(roomCode, state); finishRound(state, roomCode); return; }
     advanceAndBroadcast(state, roomCode);
     return;
   }
@@ -133,27 +130,20 @@ function doFlipThree(state, target, count, roomCode) {
     return;
   }
   if (outcome === 'needs_target') {
-    // Action card mid-flip-three — ask for target, store remaining count
     const active = state.players.filter(
       p => p.isActive && !p.hasBusted && !p.hasStayed && !p.isFrozen
     );
     state.pendingAction = {
-      type: card.value,
-      drawerId: target.id,
-      drawerName: target.name,
-      flipThreeRemaining: count - 1,
-      card,
+      type: card.value, drawerId: target.id,
+      drawerName: target.name, flipThreeRemaining: count - 1, card,
     };
     broadcast(roomCode, state);
     io.to(roomCode).emit('action_card_drawn', {
-      card,
-      drawerId: target.id,
-      drawerName: target.name,
+      card, drawerId: target.id, drawerName: target.name,
       activePlayers: active.map(p => ({ id: p.id, name: p.name })),
     });
     return;
   }
-
   broadcast(roomCode, state);
   setTimeout(() => doFlipThree(state, target, count - 1, roomCode), 700);
 }
@@ -163,22 +153,53 @@ function doFlipThree(state, target, count, roomCode) {
 io.on('connection', socket => {
   console.log('[connect]', socket.id);
   let myRoom = null;
+  const playerToken = socket.handshake.auth?.token || null;
 
-  // CREATE ROOM
+  // ── ATTEMPT AUTO-RECONNECT ON CONNECT ──
+  // If the client has a token and we know them, restore their session
+  if (playerToken) {
+    const result = reconnectPlayer(playerToken, socket.id);
+    if (result && !result.error) {
+      const { state, player } = result;
+      myRoom = state.roomCode;
+      socket.join(myRoom);
+
+      console.log(`[reconnect] ${player.name} back in room ${myRoom}`);
+
+      // Tell the client they're reconnected
+      socket.emit('reconnected', {
+        roomCode: myRoom,
+        playerId: socket.id,
+        phase: state.phase,
+        gameState: clientState(state),
+      });
+
+      // Tell everyone else this player is back
+      io.to(myRoom).emit('player_reconnected', {
+        playerId: socket.id,
+        playerName: player.name,
+      });
+
+      broadcast(myRoom, state);
+      return; // skip normal connection flow
+    }
+  }
+
+  // ── CREATE ROOM ──
   socket.on('create_room', ({ playerName }) => {
     if (!playerName?.trim()) { socket.emit('room_error', { message: 'Enter a name.' }); return; }
-    const state = createRoom(socket.id, playerName.trim());
+    const state = createRoom(socket.id, playerName.trim(), playerToken);
     myRoom = state.roomCode;
     socket.join(myRoom);
     socket.emit('room_created', { roomCode: myRoom, playerId: socket.id });
     io.to(myRoom).emit('lobby_update', { players: state.players, hostId: state.hostId });
   });
 
-  // JOIN ROOM
+  // ── JOIN ROOM ──
   socket.on('join_room', ({ roomCode, playerName }) => {
     if (!playerName?.trim()) { socket.emit('room_error', { message: 'Enter a name.' }); return; }
     if (!roomCode?.trim())   { socket.emit('room_error', { message: 'Enter a room code.' }); return; }
-    const result = joinRoom(roomCode.trim().toUpperCase(), socket.id, playerName.trim());
+    const result = joinRoom(roomCode.trim().toUpperCase(), socket.id, playerName.trim(), playerToken);
     if (result.error) { socket.emit('room_error', { message: result.error }); return; }
     const state = result.state;
     myRoom = state.roomCode;
@@ -187,7 +208,7 @@ io.on('connection', socket => {
     io.to(myRoom).emit('lobby_update', { players: state.players, hostId: state.hostId });
   });
 
-  // START GAME
+  // ── START GAME ──
   socket.on('start_game', ({ roomCode }) => {
     const state = getRoom(roomCode);
     if (!state || state.hostId !== socket.id) return;
@@ -196,13 +217,11 @@ io.on('connection', socket => {
       return;
     }
     startRound(state);
-    // Send game_started first so clients switch screens
     io.to(roomCode).emit('game_started', { gameState: clientState(state) });
-    // Then broadcast full state
     broadcast(roomCode, state);
   });
 
-  // START NEXT ROUND
+  // ── START NEXT ROUND ──
   socket.on('start_next_round', ({ roomCode }) => {
     const state = getRoom(roomCode);
     if (!state || state.phase !== 'round_over' || state.hostId !== socket.id) return;
@@ -211,7 +230,7 @@ io.on('connection', socket => {
     broadcast(roomCode, state);
   });
 
-  // PLAY AGAIN
+  // ── PLAY AGAIN ──
   socket.on('play_again', ({ roomCode }) => {
     const state = getRoom(roomCode);
     if (!state || state.phase !== 'game_over' || state.hostId !== socket.id) return;
@@ -219,13 +238,12 @@ io.on('connection', socket => {
     io.to(roomCode).emit('lobby_update', { players: state.players, hostId: state.hostId });
   });
 
-  // HIT OR STAY
+  // ── HIT OR STAY ──
   socket.on('player_action', ({ roomCode, action }) => {
     const state = getRoom(roomCode);
     if (!state || state.phase !== 'playing') return;
     if (state.pendingAction) return;
 
-    // Hard gate: only the current turn player can act
     const cp = currentPlayer(state);
     if (!cp || cp.id !== socket.id) return;
     if (!cp.isActive || cp.hasBusted || cp.hasStayed || cp.isFrozen) return;
@@ -263,8 +281,7 @@ io.on('connection', socket => {
         if (active.length === 1 && active[0].id === socket.id) {
           state.discardPile.push(card);
           if (card.value === 'Freeze') {
-            cp.isActive = false;
-            cp.isFrozen = true;
+            cp.isActive = false; cp.isFrozen = true;
             cp.roundScore = computeScore(cp);
             if (deckEmpty) { broadcast(roomCode, state); finishRound(state, roomCode); return; }
             advanceAndBroadcast(state, roomCode);
@@ -274,34 +291,22 @@ io.on('connection', socket => {
           return;
         }
         state.pendingAction = {
-          type: card.value,
-          drawerId: cp.id,
-          drawerName: cp.name,
-          flipThreeRemaining: 3,
-          card,
+          type: card.value, drawerId: cp.id,
+          drawerName: cp.name, flipThreeRemaining: 3, card,
         };
         broadcast(roomCode, state);
         io.to(roomCode).emit('action_card_drawn', {
-          card,
-          drawerId: cp.id,
-          drawerName: cp.name,
+          card, drawerId: cp.id, drawerName: cp.name,
           activePlayers: active.map(p => ({ id: p.id, name: p.name })),
         });
         return;
       }
-
-      // Normal card placed — if deck is now empty, end the round
-      if (deckEmpty) {
-        broadcast(roomCode, state);
-        finishRound(state, roomCode);
-        return;
-      }
-
+      if (deckEmpty) { broadcast(roomCode, state); finishRound(state, roomCode); return; }
       advanceAndBroadcast(state, roomCode);
     }
   });
 
-  // SELECT TARGET FOR ACTION CARD
+  // ── SELECT TARGET ──
   socket.on('select_target', ({ roomCode, targetId }) => {
     const state = getRoom(roomCode);
     if (!state || !state.pendingAction) return;
@@ -315,40 +320,61 @@ io.on('connection', socket => {
     state.pendingAction = null;
 
     if (type === 'Freeze') {
-      target.isActive = false;
-      target.isFrozen = true;
+      target.isActive = false; target.isFrozen = true;
       target.roundScore = computeScore(target);
       advanceAndBroadcast(state, roomCode);
       return;
     }
-
     if (type === 'FlipThree') {
       const count = flipThreeRemaining > 0 ? flipThreeRemaining : 3;
       doFlipThree(state, target, count, roomCode);
     }
   });
 
-  // DISCONNECT
+  // ── DISCONNECT ──
   socket.on('disconnect', () => {
     console.log('[disconnect]', socket.id);
     if (!myRoom) return;
-    const state = removePlayer(myRoom, socket.id);
-    if (!state) return;
 
-    io.to(myRoom).emit('lobby_update', { players: state.players, hostId: state.hostId });
-
-    if (state.phase === 'playing') {
-      // Fix turnIndex if it's now out of bounds
-      if (state.turnIndex >= state.players.length) {
-        state.turnIndex = 0;
-      }
-      if (!checkRoundOver(state, myRoom)) {
-        // Make sure turnIndex points to an active player
-        const cp = currentPlayer(state);
-        if (!cp || cp.hasBusted || cp.hasStayed || cp.isFrozen) {
+    const result = markDisconnected(socket.id, (roomCode, removedPlayer, state) => {
+      // This fires after 20 min timeout if player never came back
+      console.log(`[timeout remove] ${removedPlayer.name} from ${roomCode}`);
+      io.to(roomCode).emit('player_left', {
+        playerId: removedPlayer.id,
+        playerName: removedPlayer.name,
+        newHostId: state.hostId,
+        players: state.players,
+      });
+      io.to(roomCode).emit('lobby_update', { players: state.players, hostId: state.hostId });
+      if (state.phase === 'playing') {
+        if (!checkRoundOver(state, roomCode)) {
+          if (state.turnIndex >= state.players.length) state.turnIndex = 0;
           nextTurn(state);
+          broadcast(roomCode, state);
         }
-        broadcast(myRoom, state);
+      }
+    });
+
+    if (!result) return;
+
+    const { state, player } = result;
+
+    // Tell everyone this player lost connection (but hasn't left yet)
+    io.to(myRoom).emit('player_disconnected', {
+      playerId: socket.id,
+      playerName: player.name,
+    });
+
+    broadcast(myRoom, state);
+
+    // If it was this player's turn, advance to next player
+    if (state.phase === 'playing') {
+      const cp = currentPlayer(state);
+      if (cp && cp.id === socket.id) {
+        if (!checkRoundOver(state, myRoom)) {
+          nextTurn(state);
+          broadcast(myRoom, state);
+        }
       }
     }
   });

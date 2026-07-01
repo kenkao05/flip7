@@ -1,5 +1,5 @@
-import React from "react";
-import { motion, AnimatePresence } from "motion/react";
+import React from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function ConnectionBanner({ connected, connecting }) {
   return (
@@ -9,12 +9,23 @@ export default function ConnectionBanner({ connected, connecting }) {
           initial={{ y: -60 }}
           animate={{ y: 0 }}
           exit={{ y: -60 }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="fixed top-0 left-0 right-0 z-50 bg-yellow-600 text-white text-center py-2 text-sm font-semibold"
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0,
+            zIndex: 9999,
+            background: connecting ? '#b45309' : '#dc2626',
+            color: 'white',
+            textAlign: 'center',
+            padding: '10px 16px',
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: '0.03em',
+          }}
         >
           {connecting
-            ? "⏳ Connecting to server..."
-            : "⚠️ Disconnected. Reconnecting..."}
+            ? '⏳ Reconnecting... your game slot is held for 20 minutes'
+            : '⚠️ Connection lost — attempting to reconnect'}
         </motion.div>
       )}
     </AnimatePresence>
