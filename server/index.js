@@ -25,6 +25,11 @@ const io = new Server(server, {
   pingInterval: 10000,
   pingTimeout: 5000,
   transports: ['websocket', 'polling'],
+  // Built-in session recovery for brief disconnects (tab switch, network blip)
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000, // 2 min built-in recovery
+    skipMiddlewares: true,
+  },
 });
 
 app.use(cors());
@@ -72,6 +77,13 @@ function clientState(state) {
 
 function broadcast(roomCode, state) {
   io.to(roomCode).emit('game_state', { gameState: clientState(state) });
+}
+
+function broadcastLobby(roomCode, state) {
+  io.to(roomCode).emit('lobby_update', {
+    players: state.players,
+    hostId: state.hostId,
+  });
 }
 
 function finishRound(state, roomCode, flip7WinnerId = null) {
@@ -151,12 +163,44 @@ function doFlipThree(state, target, count, roomCode) {
 // ─── SOCKET EVENTS ────────────────────────────────────────────────────────────
 
 io.on('connection', socket => {
-  console.log('[connect]', socket.id);
+  console.log('[connect]', socket.id, 'recovered:', socket.recovered);
   let myRoom = null;
   const playerToken = socket.handshake.auth?.token || null;
 
-  // ── ATTEMPT AUTO-RECONNECT ON CONNECT ──
-  // If the client has a token and we know them, restore their session
+  // ── CASE 1: Socket.IO built-in recovery (brief disconnect, same session) ──
+  if (socket.recovered) {
+    // Socket.IO restored the socket.id and rooms automatically
+    // Just find which room they were in and resync
+    const state = playerToken ? require('./roomManager').getRoomByToken(playerToken) : null;
+    if (state) {
+      myRoom = state.roomCode;
+      const player = state.players.find(p => p.token === playerToken);
+      if (player) {
+        player.id = socket.id;
+        player.connected = true;
+        if (player.disconnectTimer) {
+          clearTimeout(player.disconnectTimer);
+          player.disconnectTimer = null;
+        }
+        if (state.hostId && state.players.find(p => p.token === playerToken)?.isHost) {
+          state.hostId = socket.id;
+        }
+        console.log(`[recovered] ${player.name} in ${myRoom}`);
+        socket.join(myRoom);
+        socket.emit('reconnected', {
+          roomCode: myRoom,
+          playerId: socket.id,
+          phase: state.phase,
+          gameState: clientState(state),
+        });
+        broadcastLobby(myRoom, state);
+        broadcast(myRoom, state);
+      }
+    }
+    return;
+  }
+
+  // ── CASE 2: Token-based reconnect (page reload, new tab, long absence) ──
   if (playerToken) {
     const result = reconnectPlayer(playerToken, socket.id);
     if (result && !result.error) {
@@ -164,9 +208,8 @@ io.on('connection', socket => {
       myRoom = state.roomCode;
       socket.join(myRoom);
 
-      console.log(`[reconnect] ${player.name} back in room ${myRoom}`);
+      console.log(`[token-reconnect] ${player.name} back in ${myRoom}`);
 
-      // Tell the client they're reconnected
       socket.emit('reconnected', {
         roomCode: myRoom,
         playerId: socket.id,
@@ -174,34 +217,29 @@ io.on('connection', socket => {
         gameState: clientState(state),
       });
 
-      // Tell everyone else this player is back
+      // Critical: broadcast lobby so everyone sees correct host and player list
+      broadcastLobby(myRoom, state);
+      broadcast(myRoom, state);
+
       io.to(myRoom).emit('player_reconnected', {
         playerId: socket.id,
         playerName: player.name,
       });
-
-      // Always re-broadcast lobby_update so host crown is correct on all screens
-      io.to(myRoom).emit('lobby_update', {
-        players: state.players,
-        hostId: state.hostId,
-      });
-
-      broadcast(myRoom, state);
       return;
     }
   }
 
-  // ── CREATE ROOM ──
+  // ── CASE 3: Fresh connection — normal flow ──
+
   socket.on('create_room', ({ playerName }) => {
     if (!playerName?.trim()) { socket.emit('room_error', { message: 'Enter a name.' }); return; }
     const state = createRoom(socket.id, playerName.trim(), playerToken);
     myRoom = state.roomCode;
     socket.join(myRoom);
     socket.emit('room_created', { roomCode: myRoom, playerId: socket.id });
-    io.to(myRoom).emit('lobby_update', { players: state.players, hostId: state.hostId });
+    broadcastLobby(myRoom, state);
   });
 
-  // ── JOIN ROOM ──
   socket.on('join_room', ({ roomCode, playerName }) => {
     if (!playerName?.trim()) { socket.emit('room_error', { message: 'Enter a name.' }); return; }
     if (!roomCode?.trim())   { socket.emit('room_error', { message: 'Enter a room code.' }); return; }
@@ -211,10 +249,9 @@ io.on('connection', socket => {
     myRoom = state.roomCode;
     socket.join(myRoom);
     socket.emit('room_joined', { roomCode: myRoom, playerId: socket.id });
-    io.to(myRoom).emit('lobby_update', { players: state.players, hostId: state.hostId });
+    broadcastLobby(myRoom, state);
   });
 
-  // ── START GAME ──
   socket.on('start_game', ({ roomCode }) => {
     const state = getRoom(roomCode);
     if (!state || state.hostId !== socket.id) return;
@@ -227,7 +264,6 @@ io.on('connection', socket => {
     broadcast(roomCode, state);
   });
 
-  // ── START NEXT ROUND ──
   socket.on('start_next_round', ({ roomCode }) => {
     const state = getRoom(roomCode);
     if (!state || state.phase !== 'round_over' || state.hostId !== socket.id) return;
@@ -236,15 +272,13 @@ io.on('connection', socket => {
     broadcast(roomCode, state);
   });
 
-  // ── PLAY AGAIN ──
   socket.on('play_again', ({ roomCode }) => {
     const state = getRoom(roomCode);
     if (!state || state.phase !== 'game_over' || state.hostId !== socket.id) return;
     resetGame(state);
-    io.to(roomCode).emit('lobby_update', { players: state.players, hostId: state.hostId });
+    broadcastLobby(roomCode, state);
   });
 
-  // ── HIT OR STAY ──
   socket.on('player_action', ({ roomCode, action }) => {
     const state = getRoom(roomCode);
     if (!state || state.phase !== 'playing') return;
@@ -312,7 +346,6 @@ io.on('connection', socket => {
     }
   });
 
-  // ── SELECT TARGET ──
   socket.on('select_target', ({ roomCode, targetId }) => {
     const state = getRoom(roomCode);
     if (!state || !state.pendingAction) return;
@@ -337,13 +370,11 @@ io.on('connection', socket => {
     }
   });
 
-  // ── DISCONNECT ──
   socket.on('disconnect', () => {
     console.log('[disconnect]', socket.id);
     if (!myRoom) return;
 
     const result = markDisconnected(socket.id, (roomCode, removedPlayer, state) => {
-      // This fires after 20 min timeout if player never came back
       console.log(`[timeout remove] ${removedPlayer.name} from ${roomCode}`);
       io.to(roomCode).emit('player_left', {
         playerId: removedPlayer.id,
@@ -351,7 +382,7 @@ io.on('connection', socket => {
         newHostId: state.hostId,
         players: state.players,
       });
-      io.to(roomCode).emit('lobby_update', { players: state.players, hostId: state.hostId });
+      broadcastLobby(roomCode, state);
       if (state.phase === 'playing') {
         if (!checkRoundOver(state, roomCode)) {
           if (state.turnIndex >= state.players.length) state.turnIndex = 0;
@@ -362,27 +393,14 @@ io.on('connection', socket => {
     });
 
     if (!result) return;
-
     const { state, player } = result;
 
-    // Tell everyone this player lost connection (but hasn't left yet)
     io.to(myRoom).emit('player_disconnected', {
       playerId: socket.id,
       playerName: player.name,
     });
 
     broadcast(myRoom, state);
-
-    // If it was this player's turn, advance to next player
-    if (state.phase === 'playing') {
-      const cp = currentPlayer(state);
-      if (cp && cp.id === socket.id) {
-        if (!checkRoundOver(state, myRoom)) {
-          nextTurn(state);
-          broadcast(myRoom, state);
-        }
-      }
-    }
   });
 });
 

@@ -20,15 +20,14 @@ export default function App() {
   const [flip7Event, setFlip7Event] = useState(null);
   const [actionCardEvent, setActionCardEvent] = useState(null);
 
-  const screenRef = useRef(screen);
-  useEffect(() => { screenRef.current = screen; }, [screen]);
-
   useEffect(() => {
     socket.connect();
 
     socket.on('connect', () => {
       setConnected(true);
       setConnecting(false);
+      // Update playerId on every connect since socket.id changes on reconnect
+      setPlayerId(socket.id);
     });
 
     socket.on('disconnect', () => {
@@ -40,7 +39,7 @@ export default function App() {
       setConnecting(true);
     });
 
-    // ── AUTO RECONNECT — server recognized our token ──
+    // ── SERVER RECOGNIZED OUR TOKEN — RESTORE SESSION ──
     socket.on('reconnected', ({ roomCode: rc, playerId: pid, phase, gameState: gs }) => {
       setRoomCode(rc);
       setPlayerId(pid);
@@ -48,10 +47,11 @@ export default function App() {
       setConnected(true);
       setConnecting(false);
 
-      // Go to the right screen based on where the game is
-      if (phase === 'lobby') setScreen('lobby');
-      else if (phase === 'playing') setScreen('game');
-      else if (phase === 'round_over') {
+      if (phase === 'lobby') {
+        setScreen('lobby');
+      } else if (phase === 'playing') {
+        setScreen('game');
+      } else if (phase === 'round_over') {
         setRoundScores({ scores: gs.lastRoundScores, roundNumber: gs.roundNumber });
         setScreen('roundSummary');
       } else if (phase === 'game_over') {
@@ -116,8 +116,7 @@ export default function App() {
     });
 
     socket.on('player_disconnected', ({ playerName }) => {
-      // Show a brief notice — player is gone but slot held for 20 min
-      console.log(`${playerName} disconnected — slot held for 20 minutes`);
+      console.log(`${playerName} disconnected`);
     });
 
     socket.on('player_reconnected', ({ playerName }) => {
@@ -150,7 +149,9 @@ export default function App() {
       <ConnectionBanner connected={connected} connecting={connecting} />
 
       {screen === 'home' && <Home />}
-      {screen === 'lobby' && <Lobby roomCode={roomCode} playerId={playerId} />}
+      {screen === 'lobby' && (
+        <Lobby roomCode={roomCode} playerId={playerId} />
+      )}
       {screen === 'game' && gameState && (
         <Game
           gameState={gameState}

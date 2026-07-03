@@ -4,7 +4,7 @@ const SERVER_URL = import.meta.env.PROD
   ? window.location.origin
   : 'http://localhost:3001';
 
-// Generate a persistent token so the server can re-identify this player after reconnect
+// Persistent token for long-term reconnect (closing browser, coming back later)
 function getOrCreateToken() {
   let token = localStorage.getItem('flip7_token');
   if (!token) {
@@ -26,6 +26,6 @@ export const socket = io(SERVER_URL, {
   pingTimeout: 5000,
   transports: ['websocket', 'polling'],
   auth: {
-    token: getOrCreateToken(),
+    token: playerToken,
   },
 });

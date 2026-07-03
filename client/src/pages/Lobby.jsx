@@ -1,35 +1,27 @@
-import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { socket } from "../socket";
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { socket, playerToken } from '../socket';
 
 export default function Lobby({ roomCode, playerId }) {
   const [players, setPlayers] = useState([]);
-  const [hostId, setHostId] = useState("");
+  const [hostId, setHostId] = useState('');
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    socket.on("lobby_update", ({ players: p, hostId: h }) => {
+    socket.on('lobby_update', ({ players: p, hostId: h }) => {
       setPlayers(p);
       setHostId(h);
     });
-
-    socket.on("error", ({ message }) => setError(message));
+    socket.on('room_error', ({ message }) => setError(message));
 
     return () => {
-      socket.off("lobby_update");
-      socket.off("error");
+      socket.off('lobby_update');
+      socket.off('room_error');
     };
   }, []);
 
   const isHost = playerId === hostId;
-  const handleExit = () => {
-    socket.disconnect();
-    // Clear stored room so reconnect doesn't pull them back in
-    localStorage.removeItem('flip7_token');
-    // Force page reload to reset all state cleanly
-    window.location.reload();
-  };
 
   const copyCode = () => {
     navigator.clipboard.writeText(roomCode);
@@ -37,8 +29,15 @@ export default function Lobby({ roomCode, playerId }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleExit = () => {
+    // Wipe token so reconnect doesn't pull them back into this room
+    localStorage.removeItem('flip7_token');
+    socket.disconnect();
+    window.location.reload();
+  };
+
   const startGame = () => {
-    socket.emit("start_game", { roomCode });
+    socket.emit('start_game', { roomCode });
   };
 
   return (
@@ -57,17 +56,13 @@ export default function Lobby({ roomCode, playerId }) {
         animate={{ opacity: 1, scale: 1 }}
         className="bg-black/30 border border-white/10 rounded-2xl px-8 py-4 mb-6 text-center"
       >
-        <div className="text-white/50 text-xs mb-1 uppercase tracking-widest">
-          Room Code
-        </div>
-        <div className="room-code text-4xl text-white font-display">
-          {roomCode}
-        </div>
+        <div className="text-white/50 text-xs mb-1 uppercase tracking-widest">Room Code</div>
+        <div className="room-code text-4xl text-white font-display">{roomCode}</div>
         <button
           onClick={copyCode}
           className="mt-2 text-xs text-white/50 hover:text-white transition-colors"
         >
-          {copied ? "✓ Copied!" : "Tap to copy"}
+          {copied ? '✓ Copied!' : 'Tap to copy'}
         </button>
       </motion.div>
 
@@ -85,9 +80,7 @@ export default function Lobby({ roomCode, playerId }) {
               exit={{ opacity: 0, x: 20 }}
               transition={{ delay: i * 0.05 }}
               className={`flex items-center gap-3 py-3 px-4 rounded-xl mb-2 ${
-                p.id === playerId
-                  ? "bg-gold/20 border border-gold/30"
-                  : "bg-white/5"
+                p.id === playerId ? 'bg-gold/20 border border-gold/30' : 'bg-white/5'
               }`}
             >
               <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-display text-lg text-white">
@@ -95,36 +88,26 @@ export default function Lobby({ roomCode, playerId }) {
               </div>
               <span className="font-semibold text-white flex-1">{p.name}</span>
               {p.id === playerId && (
-                <span className="text-xs text-gold">you</span>
+                <span style={{
+                  background: '#f59e0b', color: '#0f2d1c',
+                  fontSize: 9, fontWeight: 700, padding: '1px 5px',
+                  borderRadius: 4, fontFamily: 'Bebas Neue',
+                }}>YOU</span>
               )}
               {p.isHost && <span className="text-yellow-400 text-sm">👑</span>}
+              {p.connected === false && <span className="text-xs text-red-400">disconnected</span>}
             </motion.div>
           ))}
         </AnimatePresence>
       </div>
 
-      {/* Status */}
+      {/* Status / start button */}
       {!isHost && (
-        <p className="text-white/40 text-sm">Waiting for host to start...</p>
+        <p className="text-white/40 text-sm mb-4">Waiting for host to start...</p>
       )}
 
-      {/* Exit button — always visible */}
-      <motion.button
-        whileTap={{ scale: 0.95 }}
-        onClick={handleExit}
-        className="w-full max-w-sm mt-4 py-3 rounded-2xl font-display text-xl"
-        style={{
-          background: 'rgba(220,38,38,0.15)',
-          border: '1px solid rgba(220,38,38,0.3)',
-          color: '#f87171',
-          cursor: 'pointer',
-        }}
-      >
-        LEAVE LOBBY
-      </motion.button>
-
       {isHost && (
-        <motion.div className="w-full max-w-sm">
+        <motion.div className="w-full max-w-sm mb-4">
           {players.length < 2 && (
             <p className="text-white/40 text-sm text-center mb-3">
               Need at least 2 players to start
@@ -136,14 +119,29 @@ export default function Lobby({ roomCode, playerId }) {
             disabled={players.length < 2}
             className={`w-full py-4 rounded-2xl font-display text-2xl transition-all ${
               players.length >= 2
-                ? "bg-gold text-feltDark"
-                : "bg-white/10 text-white/30 cursor-not-allowed"
+                ? 'bg-gold text-feltDark'
+                : 'bg-white/10 text-white/30 cursor-not-allowed'
             }`}
           >
             START GAME
           </motion.button>
         </motion.div>
       )}
+
+      {/* Leave lobby — always visible */}
+      <motion.button
+        whileTap={{ scale: 0.95 }}
+        onClick={handleExit}
+        className="w-full max-w-sm py-3 rounded-2xl font-display text-xl"
+        style={{
+          background: 'rgba(220,38,38,0.12)',
+          border: '1px solid rgba(220,38,38,0.25)',
+          color: '#f87171',
+          cursor: 'pointer',
+        }}
+      >
+        LEAVE LOBBY
+      </motion.button>
 
       {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
     </div>
