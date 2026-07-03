@@ -82,8 +82,8 @@ function startRound(state) {
 
   // Rebuild deck if needed
   if (state.deck.length < 10) {
-    state.deck = [...buildDeck(), ...shuffle(state.discardPile)];
-    state.discardPile = [];
+    state.deck = buildDeck();
+  state.discardPile = [];
   }
 }
 
@@ -193,7 +193,7 @@ function endRound(state, flip7WinnerId) {
   state.dealerIndex = (state.dealerIndex + 1) % state.players.length;
 
   const max = Math.max(...state.players.map(p => p.totalScore));
-  if (max >= 180) {
+  if (max >= 200) {
     const winners = state.players.filter(p => p.totalScore === max);
     if (winners.length === 1) {
       state.phase = 'game_over';

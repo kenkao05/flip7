@@ -23,6 +23,13 @@ export default function Lobby({ roomCode, playerId }) {
   }, []);
 
   const isHost = playerId === hostId;
+  const handleExit = () => {
+    socket.disconnect();
+    // Clear stored room so reconnect doesn't pull them back in
+    localStorage.removeItem('flip7_token');
+    // Force page reload to reset all state cleanly
+    window.location.reload();
+  };
 
   const copyCode = () => {
     navigator.clipboard.writeText(roomCode);
@@ -100,6 +107,21 @@ export default function Lobby({ roomCode, playerId }) {
       {!isHost && (
         <p className="text-white/40 text-sm">Waiting for host to start...</p>
       )}
+
+      {/* Exit button — always visible */}
+      <motion.button
+        whileTap={{ scale: 0.95 }}
+        onClick={handleExit}
+        className="w-full max-w-sm mt-4 py-3 rounded-2xl font-display text-xl"
+        style={{
+          background: 'rgba(220,38,38,0.15)',
+          border: '1px solid rgba(220,38,38,0.3)',
+          color: '#f87171',
+          cursor: 'pointer',
+        }}
+      >
+        LEAVE LOBBY
+      </motion.button>
 
       {isHost && (
         <motion.div className="w-full max-w-sm">

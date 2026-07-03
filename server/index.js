@@ -180,8 +180,14 @@ io.on('connection', socket => {
         playerName: player.name,
       });
 
+      // Always re-broadcast lobby_update so host crown is correct on all screens
+      io.to(myRoom).emit('lobby_update', {
+        players: state.players,
+        hostId: state.hostId,
+      });
+
       broadcast(myRoom, state);
-      return; // skip normal connection flow
+      return;
     }
   }
 

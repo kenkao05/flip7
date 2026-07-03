@@ -25,7 +25,6 @@ body {
   overflow-x: hidden;
 }
 
-/* Card base */
 .card-base {
   border-radius: 10px;
   box-shadow: 2px 4px 8px rgba(0,0,0,0.5);
@@ -39,101 +38,190 @@ body {
   user-select: none;
 }
 
-/* Oval felt table */
 .felt-table {
   background: radial-gradient(ellipse at center, #2d6a4f 0%, #1a472a 60%, #0f2d1c 100%);
 }
 
-.table-oval {
-  background: radial-gradient(ellipse at center, #2d6a4f 0%, #1a472a 70%, #0f2d1c 100%);
-  border: 6px solid #8B6914;
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 4px #5a4209,
-    inset 0 0 60px rgba(0,0,0,0.4),
-    0 20px 60px rgba(0,0,0,0.6);
-}
-
-/* Deck stack visual */
-.deck-stack {
+/* ── CIRCULAR TABLE LAYOUT ── */
+.game-table-wrapper {
   position: relative;
-  width: 56px;
-  height: 80px;
-  cursor: pointer;
-  transition: transform 0.15s ease;
-}
-
-.deck-stack:active {
-  transform: scale(0.93);
-}
-
-.deck-card {
-  position: absolute;
-  width: 56px;
-  height: 80px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 50%, #1e3a5f 100%);
-  border: 2px solid #4a90d9;
-  box-shadow: 1px 2px 4px rgba(0,0,0,0.5);
-}
-
-.deck-card:nth-child(1) { transform: translate(-3px, -3px) rotate(-3deg); }
-.deck-card:nth-child(2) { transform: translate(-1px, -1px) rotate(-1deg); }
-.deck-card:nth-child(3) { transform: translate(0px, 0px) rotate(0deg); }
-
-.deck-stack-label {
-  position: absolute;
-  bottom: -22px;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  font-size: 11px;
-  color: rgba(255,255,255,0.6);
-  font-family: 'Inter', sans-serif;
-}
-
-/* Card fan for my hand */
-.card-fan {
+  width: 100%;
+  /* Height = full screen minus bottom buttons */
+  height: calc(100dvh - 120px);
   display: flex;
-  flex-direction: row;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  padding: 4px 2px;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Turn indicator banner */
-.turn-banner {
-  background: linear-gradient(90deg, transparent, rgba(245,158,11,0.2), transparent);
-  border-top: 1px solid rgba(245,158,11,0.3);
-  border-bottom: 1px solid rgba(245,158,11,0.3);
+/* The oval table in the center */
+.center-table {
+  position: absolute;
+  width: 180px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, #2d6a4f 0%, #1a472a 70%, #0f2d1c 100%);
+  border: 5px solid #8B6914;
+  box-shadow:
+    0 0 0 3px #5a4209,
+    inset 0 0 30px rgba(0,0,0,0.4),
+    0 8px 30px rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
 }
+
+/* Player slots around the table */
+.player-slot {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  z-index: 3;
+}
+
+/* Avatar circle */
+.player-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  color: white;
+  border: 2px solid rgba(255,255,255,0.2);
+  background: rgba(0,0,0,0.4);
+  position: relative;
+}
+
+.player-avatar.is-turn {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.4);
+}
+
+.player-avatar.busted {
+  border-color: #dc2626;
+  background: rgba(220,38,38,0.3);
+}
+
+.player-avatar.stayed {
+  border-color: #3b82f6;
+  opacity: 0.7;
+}
+
+.player-avatar.frozen {
+  border-color: #60a5fa;
+  opacity: 0.7;
+}
+
+.player-avatar.disconnected {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+/* Name + score tag below avatar */
+.player-tag {
+  background: rgba(0,0,0,0.6);
+  border-radius: 8px;
+  padding: 2px 6px;
+  text-align: center;
+  white-space: nowrap;
+  max-width: 80px;
+}
+
+.player-tag .pname {
+  font-size: 10px;
+  font-weight: 700;
+  color: white;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 72px;
+}
+
+.player-tag .pscore {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 13px;
+  color: #f59e0b;
+  line-height: 1;
+}
+
+/* Card count bubble */
+.card-count-bubble {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 10px;
+  padding: 2px 7px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.8);
+  white-space: nowrap;
+}
+
+/* ME — bottom slot, full card display */
+.me-slot {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0 12px 8px;
+  z-index: 3;
+}
+
+.me-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: flex-end;
+  min-height: 56px;
+  padding: 4px 0;
+}
+
+/* ── LIST LAYOUT (5-8 players) ── */
+.list-layout {
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px;
+  gap: 6px;
+}
+
+/* Turn banner */
+.turn-banner {
+  text-align: center;
+  padding: 7px 16px;
+}
+
+/* Deck stack */
+.deck-stack-outer {
+  position: relative;
+  width: 60px;
+  height: 86px;
+  cursor: pointer;
+}
+
+.deck-card-shadow {
+  position: absolute;
+  width: 60px;
+  height: 86px;
+  border-radius: 8px;
+}
+
+/* Pulse animation */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0   rgba(245,158,11,0.7); }
+  70%  { box-shadow: 0 0 0 8px rgba(245,158,11,0); }
+  100% { box-shadow: 0 0 0 0   rgba(245,158,11,0); }
+}
+.pulse-gold { animation: pulse-ring 1.5s infinite; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2d6a4f; border-radius: 3px; }
 
-/* Room code display */
 .room-code {
   letter-spacing: 0.3em;
   font-family: 'Bebas Neue', sans-serif;
-}
-
-/* Pulse animation for whose turn it is */
-@keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgba(245,158,11,0.7); }
-  70% { box-shadow: 0 0 0 10px rgba(245,158,11,0); }
-  100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
-}
-.pulse-gold {
-  animation: pulse-ring 1.5s infinite;
-}
-
-@keyframes float-up {
-  0% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(-40px); }
-}
-.float-up {
-  animation: float-up 1.5s ease forwards;
 }
